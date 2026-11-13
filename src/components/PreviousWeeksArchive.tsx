@@ -18,15 +18,15 @@ export const PreviousWeeksArchive: React.FC<PreviousWeeksArchiveProps> = ({
   return (
     <section
       id="archiwum"
-      aria-label="Poprzednie 3 tygodnie"
+      aria-label="Poprzednie 5 tygodni"
       className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4 transition-colors overflow-hidden"
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
         <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-          Poprzednie tygodnie (maks. 3 wstecz)
+          Poprzednie tygodnie (maks. 5 wstecz)
         </h2>
         <span className="text-xs text-slate-500 dark:text-slate-400">
-          4. tydzień automatycznie usuwa najstarszy
+          6. tydzień automatycznie usuwa najstarszy
         </span>
       </div>
 
@@ -35,7 +35,7 @@ export const PreviousWeeksArchive: React.FC<PreviousWeeksArchiveProps> = ({
           Brak zapisanych poprzednich tygodni.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {visibleWeeks.map((week, index) => (
             <div
               key={week.weekKey}

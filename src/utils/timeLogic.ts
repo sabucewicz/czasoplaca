@@ -1,5 +1,5 @@
 export const DEFAULT_HOURLY_RATE = 31.5;
-export const MAX_ARCHIVED_WEEKS = 3;
+export const MAX_ARCHIVED_WEEKS = 5;
 
 export interface WorkEntry {
   id: string;

@@ -51,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
             href="#archiwum"
             className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors whitespace-nowrap shrink-0"
           >
-            Historia (3 tyg.)
+            Historia (5 tyg.)
           </a>
         </nav>
 
