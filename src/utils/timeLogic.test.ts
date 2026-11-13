@@ -6,11 +6,11 @@ import {
   getWeekBounds,
   archiveWeekWithCap,
   checkAndRolloverWeek,
-  evaluateAutostart,
-  computeNextAutostartTimestamp,
   computeDurationFromTimes,
   createInitialSeedState,
   formatHMS,
+  formatHourlyRate,
+  parseHourlyRateInput,
   type ArchivedWeek,
   type AppStorageState,
 } from './timeLogic';
@@ -20,7 +20,6 @@ test('createInitialSeedState starts completely empty with 0 entries and 0 archiv
   assert.equal(state.entries.length, 0);
   assert.equal(state.archivedWeeks.length, 0);
   assert.equal(state.activeSession, null);
-  assert.equal(state.autostart.enabled, false);
 });
 
 test('calculateEarnings multiplies worked hours by 31.50 PLN accurately', () => {
@@ -100,13 +99,6 @@ test('checkAndRolloverWeek resets current week entries and pushes previous week 
       },
     ],
     archivedWeeks: [],
-    autostart: {
-      enabled: false,
-      time: '08:00',
-      nextTriggerTimestamp: null,
-      lastTriggeredDate: null,
-      lastStoppedDate: null,
-    },
     activeSession: null,
   };
 
@@ -120,65 +112,19 @@ test('checkAndRolloverWeek resets current week entries and pushes previous week 
   assert.equal(rolled.archivedWeeks[0].totalEarnings, 252);
 });
 
-test('Autostart schedules for tomorrow when configured after target hour, and never re-triggers after Stop', () => {
-  // User configures Autostart at 18:00 on Nov 1 for "08:00"
-  const evening = new Date(2026, 10, 1, 18, 0, 0);
-  const nextTrigger = computeNextAutostartTimestamp('08:00', evening);
-  const expectedTomorrow8am = new Date(2026, 10, 2, 8, 0, 0).getTime();
-  assert.equal(nextTrigger, expectedTomorrow8am);
-
-  // At 18:05 on Nov 1, it must NOT start prematurely
-  const eveningLater = new Date(2026, 10, 1, 18, 5, 0);
-  const checkBefore = evaluateAutostart(
-    {
-      enabled: true,
-      time: '08:00',
-      nextTriggerTimestamp: nextTrigger,
-      lastTriggeredDate: null,
-      lastStoppedDate: null,
-    },
-    null,
-    eveningLater
-  );
-  assert.equal(checkBefore.shouldStart, false);
-
-  // Next day (Nov 2) at 10:30 AM (user didn't even open app at 08:00, opens it at 10:30 AM):
-  // Autostart triggers from 08:00 AM!
-  const nextMorning = new Date(2026, 10, 2, 10, 30, 0);
-  const checkMorning = evaluateAutostart(
-    {
-      enabled: true,
-      time: '08:00',
-      nextTriggerTimestamp: nextTrigger,
-      lastTriggeredDate: null,
-      lastStoppedDate: null,
-    },
-    null,
-    nextMorning
-  );
-  assert.equal(checkMorning.shouldStart, true);
-  assert.equal(checkMorning.startTimestamp, expectedTomorrow8am);
-  assert.equal(checkMorning.startTimeFormatted, '08:00');
-  assert.equal(checkMorning.startDate, '2026-11-02');
-
-  // After user clicks Stop at 16:00 on Nov 2, evaluateAutostart must NOT re-trigger on Nov 2!
-  const afterStopTime = new Date(2026, 10, 2, 16, 1, 0);
-  const checkAfterStop = evaluateAutostart(
-    {
-      enabled: true,
-      time: '08:00',
-      nextTriggerTimestamp: checkMorning.nextTriggerTimestamp,
-      lastTriggeredDate: '2026-11-02',
-      lastStoppedDate: '2026-11-02',
-    },
-    null,
-    afterStopTime
-  );
-  assert.equal(checkAfterStop.shouldStart, false);
-});
-
 test('computeDurationFromTimes and formatHMS work accurately', () => {
   const dur = computeDurationFromTimes('08:00', '16:30');
   assert.equal(dur, 8.5 * 3600);
   assert.equal(formatHMS(dur), '08:30:00');
+});
+
+test('parseHourlyRateInput and formatHourlyRate handle custom rates', () => {
+  assert.equal(parseHourlyRateInput('31,50'), 31.5);
+  assert.equal(parseHourlyRateInput('45.75'), 45.75);
+  assert.equal(parseHourlyRateInput(' 50 '), 50);
+  assert.equal(parseHourlyRateInput('0'), null);
+  assert.equal(parseHourlyRateInput('-10'), null);
+  assert.equal(parseHourlyRateInput('abc'), null);
+  assert.ok(formatHourlyRate(45.5).includes('45,50'));
+  assert.ok(formatHourlyRate(45.5).includes('zł/h'));
 });

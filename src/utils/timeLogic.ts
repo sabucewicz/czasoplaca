@@ -8,7 +8,6 @@ export interface WorkEntry {
   endTime: string; // HH:MM
   durationSeconds: number;
   note?: string;
-  isAutoStarted?: boolean;
 }
 
 export interface ArchivedWeek {
@@ -20,20 +19,11 @@ export interface ArchivedWeek {
   entriesCount: number;
 }
 
-export interface AutostartConfig {
-  enabled: boolean;
-  time: string; // "HH:MM", e.g., "08:00"
-  nextTriggerTimestamp: number | null; // Exact epoch ms when next autostart should fire
-  lastTriggeredDate: string | null; // YYYY-MM-DD
-  lastStoppedDate: string | null; // YYYY-MM-DD
-}
-
 export interface ActiveSession {
   isRunning: boolean;
   startTimestamp: number; // ms epoch when started
   startTimeFormatted: string; // HH:MM
   date: string; // YYYY-MM-DD
-  autoStarted?: boolean;
 }
 
 export interface AppStorageState {
@@ -41,7 +31,6 @@ export interface AppStorageState {
   currentWeekKey: string; // Monday YYYY-MM-DD
   entries: WorkEntry[];
   archivedWeeks: ArchivedWeek[];
-  autostart: AutostartConfig;
   activeSession: ActiveSession | null;
 }
 
@@ -149,6 +138,33 @@ export function formatPLN(amount: number): string {
 }
 
 /**
+ * Formats hourly rate in Polish format, e.g. "31,50 zł/h"
+ */
+export function formatHourlyRate(rate: number): string {
+  const safeRate = Number.isFinite(rate) && rate > 0 ? rate : DEFAULT_HOURLY_RATE;
+  return (
+    safeRate.toLocaleString('pl-PL', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }) + ' zł/h'
+  );
+}
+
+/**
+ * Parses a user-entered hourly rate string (supports comma or dot, e.g. "31,50" or "42.5").
+ * Returns null if invalid or <= 0.
+ */
+export function parseHourlyRateInput(raw: string): number | null {
+  const normalized = raw.trim().replace(/\s+/g, '').replace(',', '.');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 100000) {
+    return null;
+  }
+  return Math.round(parsed * 100) / 100;
+}
+
+/**
  * Formats seconds into HH:MM:SS for the live clock
  */
 export function formatHMS(totalSeconds: number): string {
@@ -238,122 +254,6 @@ export function checkAndRolloverWeek(state: AppStorageState, now: Date): AppStor
 }
 
 /**
- * Computes the next upcoming timestamp for a given "HH:MM" time relative to `now`.
- * - If "HH:MM" today is still in the future (> now), returns today at HH:MM.
- * - If "HH:MM" today has already passed (<= now), returns tomorrow at HH:MM.
- */
-export function computeNextAutostartTimestamp(timeStr: string, now: Date): number | null {
-  if (!timeStr) return null;
-  const [targetH, targetM] = timeStr.split(':').map(Number);
-  if (!Number.isFinite(targetH) || !Number.isFinite(targetM)) {
-    return null;
-  }
-
-  const candidate = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    targetH,
-    targetM,
-    0,
-    0
-  );
-
-  if (candidate.getTime() <= now.getTime()) {
-    candidate.setDate(candidate.getDate() + 1);
-  }
-
-  return candidate.getTime();
-}
-
-/**
- * Evaluates whether autostart should trigger right now.
- *
- * How it works:
- * 1. User enables autostart for e.g. "08:00". `nextTriggerTimestamp` is set to the next upcoming 08:00.
- * 2. When `now >= nextTriggerTimestamp` (whether the app is open in the background at 08:00 OR the user opens
- *    the app later in the day after 08:00), the timer automatically starts counting from `nextTriggerTimestamp` (08:00)!
- * 3. `nextTriggerTimestamp` is immediately advanced to the following day's 08:00, so when the user clicks Stop,
- *    it will NEVER re-trigger for the same shift.
- */
-export function evaluateAutostart(
-  autostart: AutostartConfig,
-  activeSession: ActiveSession | null,
-  now: Date
-): {
-  shouldStart: boolean;
-  startTimestamp: number;
-  startTimeFormatted: string;
-  startDate: string;
-  nextTriggerTimestamp: number | null;
-} {
-  if (!autostart.enabled || !autostart.time) {
-    return {
-      shouldStart: false,
-      startTimestamp: 0,
-      startTimeFormatted: '',
-      startDate: '',
-      nextTriggerTimestamp: null,
-    };
-  }
-
-  if (activeSession && activeSession.isRunning) {
-    return {
-      shouldStart: false,
-      startTimestamp: 0,
-      startTimeFormatted: '',
-      startDate: '',
-      nextTriggerTimestamp: autostart.nextTriggerTimestamp,
-    };
-  }
-
-  // If nextTriggerTimestamp was not initialized yet, initialize it relative to now
-  if (!autostart.nextTriggerTimestamp) {
-    return {
-      shouldStart: false,
-      startTimestamp: 0,
-      startTimeFormatted: '',
-      startDate: '',
-      nextTriggerTimestamp: computeNextAutostartTimestamp(autostart.time, now),
-    };
-  }
-
-  if (now.getTime() >= autostart.nextTriggerTimestamp) {
-    const startTs = autostart.nextTriggerTimestamp;
-    const startD = new Date(startTs);
-    const startDateStr = toDateString(startD);
-    const nextFutureTs = computeNextAutostartTimestamp(autostart.time, now);
-
-    // Prevent starting if user already manually stopped a session after this trigger time
-    if (autostart.lastStoppedDate === startDateStr && autostart.lastTriggeredDate === startDateStr) {
-      return {
-        shouldStart: false,
-        startTimestamp: 0,
-        startTimeFormatted: '',
-        startDate: '',
-        nextTriggerTimestamp: nextFutureTs,
-      };
-    }
-
-    return {
-      shouldStart: true,
-      startTimestamp: startTs,
-      startTimeFormatted: toTimeString(startD),
-      startDate: startDateStr,
-      nextTriggerTimestamp: nextFutureTs,
-    };
-  }
-
-  return {
-    shouldStart: false,
-    startTimestamp: 0,
-    startTimeFormatted: '',
-    startDate: '',
-    nextTriggerTimestamp: autostart.nextTriggerTimestamp,
-  };
-}
-
-/**
  * Computes duration in seconds between two HH:MM strings on the same day (or overnight if end < start)
  */
 export function computeDurationFromTimes(startTime: string, endTime: string): number {
@@ -382,13 +282,6 @@ export function createInitialSeedState(now: Date): AppStorageState {
     currentWeekKey: currentMonday,
     entries: [],
     archivedWeeks: [],
-    autostart: {
-      enabled: false,
-      time: '08:00',
-      nextTriggerTimestamp: null,
-      lastTriggeredDate: null,
-      lastStoppedDate: null,
-    },
     activeSession: null,
   };
 }

@@ -1,9 +1,11 @@
-import React from 'react';
-import { Play, Square } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, Square, Pencil, Check, X } from 'lucide-react';
 import {
   formatHMS,
   formatPLN,
   formatDurationHM,
+  formatHourlyRate,
+  parseHourlyRateInput,
   calculateEarnings,
   type ActiveSession,
 } from '../utils/timeLogic';
@@ -16,6 +18,7 @@ interface TimerHeroProps {
   hourlyRate: number;
   onStart: () => void;
   onStop: () => void;
+  onUpdateHourlyRate: (newRate: number) => void;
 }
 
 export const TimerHero: React.FC<TimerHeroProps> = ({
@@ -26,7 +29,34 @@ export const TimerHero: React.FC<TimerHeroProps> = ({
   hourlyRate,
   onStart,
   onStop,
+  onUpdateHourlyRate,
 }) => {
+  const [isEditingRate, setIsEditingRate] = useState(false);
+  const [rateInput, setRateInput] = useState('');
+  const [rateError, setRateError] = useState(false);
+
+  const openRateEditor = () => {
+    setRateInput(hourlyRate.toFixed(2).replace('.', ','));
+    setRateError(false);
+    setIsEditingRate(true);
+  };
+
+  const handleSaveRate = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const parsed = parseHourlyRateInput(rateInput);
+    if (parsed === null) {
+      setRateError(true);
+      return;
+    }
+    onUpdateHourlyRate(parsed);
+    setIsEditingRate(false);
+    setRateError(false);
+  };
+
+  const handleCancelRate = () => {
+    setIsEditingRate(false);
+    setRateError(false);
+  };
   const isRunning = Boolean(activeSession?.isRunning);
   const totalTodaySeconds = todaySavedSeconds + (isRunning ? elapsedSeconds : 0);
   const totalWeekSeconds = weekSavedSeconds + (isRunning ? elapsedSeconds : 0);
@@ -57,7 +87,63 @@ export const TimerHero: React.FC<TimerHeroProps> = ({
                 ? `W trakcie (od ${activeSession?.startTimeFormatted})`
                 : 'Gotowy do startu'}
             </span>
-            <span className="font-mono-tabular shrink-0">Stawka: 31,50 zł/h</span>
+            {isEditingRate ? (
+              <form
+                onSubmit={handleSaveRate}
+                className="inline-flex items-center gap-1.5 shrink-0"
+              >
+                <label htmlFor="hourly-rate-input" className="sr-only">
+                  Stawka godzinowa (zł/h)
+                </label>
+                <input
+                  id="hourly-rate-input"
+                  type="text"
+                  inputMode="decimal"
+                  autoFocus
+                  value={rateInput}
+                  onChange={(e) => {
+                    setRateInput(e.target.value);
+                    if (rateError) setRateError(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') handleCancelRate();
+                  }}
+                  placeholder="np. 35,00"
+                  className={`w-20 px-2 py-1 text-xs font-mono-tabular font-semibold rounded-lg border bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none ${
+                    rateError
+                      ? 'border-rose-500 ring-1 ring-rose-500'
+                      : 'border-emerald-500 dark:border-emerald-500'
+                  }`}
+                />
+                <span className="text-xs font-mono-tabular">zł/h</span>
+                <button
+                  type="submit"
+                  aria-label="Zapisz stawkę"
+                  className="p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 rounded-md cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelRate}
+                  aria-label="Anuluj edycję stawki"
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={openRateEditor}
+                data-testid="hourly-rate-button"
+                aria-label="Zmień stawkę godzinową"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-mono-tabular transition-colors cursor-pointer shrink-0"
+              >
+                <span>Stawka: {formatHourlyRate(hourlyRate)}</span>
+                <Pencil className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-baseline justify-between gap-2 sm:gap-4 min-w-0">

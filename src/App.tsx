@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { TimerHero } from './components/TimerHero';
-import { AutostartCard } from './components/AutostartCard';
 import { WeeklySummaryChart } from './components/WeeklySummaryChart';
 import { DailyEntriesSection } from './components/DailyEntriesSection';
 import { PreviousWeeksArchive } from './components/PreviousWeeksArchive';
@@ -13,14 +12,11 @@ import {
   toTimeString,
   getWeekBounds,
   checkAndRolloverWeek,
-  evaluateAutostart,
-  computeNextAutostartTimestamp,
   summarizeWeekEntries,
   archiveWeekWithCap,
   createInitialSeedState,
   type AppStorageState,
   type WorkEntry,
-  type AutostartConfig,
 } from './utils/timeLogic';
 
 const LEGACY_STORAGE_KEY = 'czasoplaca_storage_v1';
@@ -41,9 +37,6 @@ function loadStateFromStorage(): AppStorageState {
     }
     const parsed = JSON.parse(raw) as Partial<AppStorageState>;
     const { weekKey } = getWeekBounds(now);
-    const rawAutostart = parsed.autostart;
-    const enabled = Boolean(rawAutostart?.enabled);
-    const time = rawAutostart?.time || '08:00';
 
     const hydrated: AppStorageState = {
       hourlyRate:
@@ -55,18 +48,6 @@ function loadStateFromStorage(): AppStorageState {
       archivedWeeks: Array.isArray(parsed.archivedWeeks)
         ? parsed.archivedWeeks.slice(0, MAX_ARCHIVED_WEEKS)
         : [],
-      autostart: {
-        enabled,
-        time,
-        nextTriggerTimestamp:
-          typeof rawAutostart?.nextTriggerTimestamp === 'number'
-            ? rawAutostart.nextTriggerTimestamp
-            : enabled
-              ? computeNextAutostartTimestamp(time, now)
-              : null,
-        lastTriggeredDate: rawAutostart?.lastTriggeredDate || null,
-        lastStoppedDate: rawAutostart?.lastStoppedDate || null,
-      },
       activeSession: parsed.activeSession || null,
     };
 
@@ -117,51 +98,26 @@ export default function App() {
     const tick = () => {
       const currentNow = new Date();
       setNowMs(currentNow.getTime());
+      setState((prev) => checkAndRolloverWeek(prev, currentNow));
+    };
 
-      setState((prev) => {
-        const afterRollover = checkAndRolloverWeek(prev, currentNow);
-        const autoCheck = evaluateAutostart(
-          afterRollover.autostart,
-          afterRollover.activeSession,
-          currentNow
-        );
-
-        if (autoCheck.shouldStart) {
-          return {
-            ...afterRollover,
-            autostart: {
-              ...afterRollover.autostart,
-              nextTriggerTimestamp: autoCheck.nextTriggerTimestamp,
-              lastTriggeredDate: autoCheck.startDate,
-            },
-            activeSession: {
-              isRunning: true,
-              startTimestamp: autoCheck.startTimestamp,
-              startTimeFormatted: autoCheck.startTimeFormatted,
-              date: autoCheck.startDate,
-              autoStarted: true,
-            },
-          };
-        }
-
-        // If nextTriggerTimestamp was initialized or updated without starting
-        if (autoCheck.nextTriggerTimestamp !== afterRollover.autostart.nextTriggerTimestamp) {
-          return {
-            ...afterRollover,
-            autostart: {
-              ...afterRollover.autostart,
-              nextTriggerTimestamp: autoCheck.nextTriggerTimestamp,
-            },
-          };
-        }
-
-        return afterRollover;
-      });
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        tick();
+      }
     };
 
     tick();
     const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', tick);
+    window.addEventListener('pageshow', tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', tick);
+      window.removeEventListener('pageshow', tick);
+    };
   }, []);
 
   const todayStr = toDateString(new Date(nowMs));
@@ -191,7 +147,6 @@ export default function App() {
         startTimestamp: now.getTime(),
         startTimeFormatted: toTimeString(now),
         date: dStr,
-        autoStarted: false,
       },
     }));
   };
@@ -217,33 +172,21 @@ export default function App() {
         startTime: prev.activeSession.startTimeFormatted,
         endTime: toTimeString(now),
         durationSeconds: durationSec,
-        isAutoStarted: prev.activeSession.autoStarted,
       };
-
-      // Advance autostart nextTriggerTimestamp strictly to the future (> now)
-      // and record lastStoppedDate so it NEVER re-triggers after Stop!
-      const nextFutureTrigger = prev.autostart.enabled
-        ? computeNextAutostartTimestamp(prev.autostart.time, now)
-        : null;
 
       return {
         ...prev,
         entries: [newEntry, ...prev.entries],
         activeSession: null,
-        autostart: {
-          ...prev.autostart,
-          nextTriggerTimestamp: nextFutureTrigger,
-          lastTriggeredDate: sessionDate,
-          lastStoppedDate: todayDateStr,
-        },
       };
     });
   };
 
-  const handleUpdateAutostart = (updated: AutostartConfig) => {
+  const handleUpdateHourlyRate = (newRate: number) => {
+    if (!Number.isFinite(newRate) || newRate <= 0) return;
     setState((prev) => ({
       ...prev,
-      autostart: updated,
+      hourlyRate: newRate,
     }));
   };
 
@@ -320,12 +263,7 @@ export default function App() {
           hourlyRate={state.hourlyRate}
           onStart={handleStart}
           onStop={handleStop}
-        />
-
-        <AutostartCard
-          autostart={state.autostart}
-          activeSession={state.activeSession}
-          onUpdateAutostart={handleUpdateAutostart}
+          onUpdateHourlyRate={handleUpdateHourlyRate}
         />
 
         <WeeklySummaryChart

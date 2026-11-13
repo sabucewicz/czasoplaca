@@ -24,7 +24,7 @@ export default defineConfig(() => {
           name: 'CzasoPłaca — Licznik Godzin i Zarobków',
           short_name: 'CzasoPłaca',
           description:
-            'Aplikacja do liczenia godzin pracy, autostartu i przeliczania stawki 31,50 zł/h na żywo.',
+            'Aplikacja do liczenia godzin pracy i przeliczania zarobków według własnej stawki godzinowej na żywo.',
           theme_color: '#020617',
           background_color: '#020617',
           display: 'standalone',
